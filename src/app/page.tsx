@@ -1,103 +1,294 @@
-import Image from "next/image";
+'use client';
+import React, { StrictMode, useState, useRef, useEffect } from "react";
+import { createRoot } from "react-dom/client";
 
+import type { ColDef, CellContextMenuEvent } from "ag-grid-community";
+import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
+import { AgGridReact } from "ag-grid-react";
+
+// Import AG Grid styles
+import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-alpine.css";
+import "./Grid.css";
+
+ModuleRegistry.registerModules([AllCommunityModule]);
+
+// Row Data Interface
+interface IRow {
+  make: string;
+  model: string;
+  price: number;
+  electric: boolean;
+}
+
+// Create new GridExample component
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const gridRef = useRef<AgGridReact>(null);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    show: boolean;
+    rowData: IRow | null;
+    x: number;
+    y: number;
+  }>({
+    show: false,
+    rowData: null,
+    x: 0,
+    y: 0,
+  });
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  const [editModal, setEditModal] = useState<{
+    show: boolean;
+    rowData: IRow | null;
+  }>({
+    show: false,
+    rowData: null,
+  });
+
+  // Row Data: The data to be displayed.
+  const [rowData, setRowData] = useState<IRow[]>([
+    { make: "Tesla", model: "Model Y", price: 64950, electric: true },
+    { make: "Ford", model: "F-Series", price: 33850, electric: false },
+    { make: "Toyota", model: "Corolla", price: 29600, electric: false },
+    { make: "Mercedes", model: "EQA", price: 48890, electric: true },
+    { make: "Fiat", model: "500", price: 15774, electric: false },
+    { make: "Nissan", model: "Juke", price: 20675, electric: false },
+  ]);
+
+  const handleEdit = (rowData: IRow) => {
+    setContextMenu({ ...contextMenu, show: false });
+    setEditModal({
+      show: true,
+      rowData: { ...rowData },
+    });
+  };
+
+  const handleDelete = (rowToDelete: IRow) => {
+    const updatedData = rowData.filter((row: IRow) =>
+      row.make !== rowToDelete.make ||
+      row.model !== rowToDelete.model
+    );
+    setRowData(updatedData);
+    setContextMenu({ ...contextMenu, show: false });
+  };
+
+  const handleContextMenu = (event: CellContextMenuEvent) => {
+    const rowData = event.data as IRow;
+    const mouseEvent = event.event as MouseEvent;
+
+    setContextMenu({
+      show: true,
+      rowData,
+      x: mouseEvent.clientX,
+      y: mouseEvent.clientY,
+    });
+  };
+
+  const handleActionClick = (event: React.MouseEvent, rowData: IRow) => {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    setContextMenu({
+      show: true,
+      rowData,
+      x: rect.right,
+      y: rect.top,
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (editModal.rowData) {
+      const updatedData = rowData.map(row =>
+        row.make === editModal.rowData!.make && row.model === editModal.rowData!.model
+          ? editModal.rowData!
+          : row
+      );
+      setRowData(updatedData);
+      setEditModal({ show: false, rowData: null });
+    }
+  };
+
+  // Action cell renderer component
+  const ActionCellRenderer = (props: any) => {
+    return (
+      <div
+        onClick={(e) => handleActionClick(e, props.data)}
+        className="action-cell"
+      >
+        <span>⋮</span>
+      </div>
+    );
+  };
+
+  // Prevent default context menu
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    const gridContainer = gridContainerRef.current;
+    if (gridContainer) {
+      gridContainer.addEventListener('contextmenu', handleContextMenu);
+    }
+
+    return () => {
+      if (gridContainer) {
+        gridContainer.removeEventListener('contextmenu', handleContextMenu);
+      }
+    };
+  }, []);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const contextMenuElement = document.querySelector('.context-menu');
+      if (contextMenuElement && !contextMenuElement.contains(event.target as Node)) {
+        setContextMenu({ ...contextMenu, show: false });
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [contextMenu]);
+
+  // Column Definitions: Defines & controls grid columns.
+  const [colDefs, setColDefs] = useState<ColDef<IRow>[]>([
+    { field: "make" },
+    { field: "model" },
+    { field: "price" },
+    { field: "electric" },
+    {
+      headerName: "",
+      cellRenderer: ActionCellRenderer,
+      width: 50,
+      sortable: false,
+      filter: false,
+      pinned: 'right',
+      cellStyle: { padding: '0' },
+      suppressMovable: true,
+    }
+  ]);
+
+  const defaultColDef: ColDef = {
+    flex: 1,
+  };
+
+  // Container: Defines the grid's theme & dimensions.
+  return (
+    <div
+      ref={gridContainerRef}
+      className="ag-theme-alpine grid-container"
+    >
+      <AgGridReact
+        ref={gridRef}
+        rowData={rowData}
+        columnDefs={colDefs}
+        defaultColDef={defaultColDef}
+        theme="legacy"
+        onCellContextMenu={handleContextMenu}
+        suppressContextMenu={true}
+      />
+      {contextMenu.show && contextMenu.rowData && (
+        <div
+          className="context-menu"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+          }}
+        >
+          <div
+            className="menu-item"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (contextMenu.rowData) {
+                handleEdit(contextMenu.rowData);
+              }
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Edit
+          </div>
+          <div
+            className="menu-item delete"
+            onClick={() => handleDelete(contextMenu.rowData!)}
           >
-            Read our docs
-          </a>
+            Delete
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
+      {editModal.show && editModal.rowData && (
+        <div className="modal">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>Edit Row</h2>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Make</label>
+                <input
+                  type="text"
+                  value={editModal.rowData.make}
+                  onChange={(e) => setEditModal({
+                    ...editModal,
+                    rowData: { ...editModal.rowData!, make: e.target.value }
+                  })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Model</label>
+                <input
+                  type="text"
+                  value={editModal.rowData.model}
+                  onChange={(e) => setEditModal({
+                    ...editModal,
+                    rowData: { ...editModal.rowData!, model: e.target.value }
+                  })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Price</label>
+                <input
+                  type="number"
+                  value={editModal.rowData.price}
+                  onChange={(e) => setEditModal({
+                    ...editModal,
+                    rowData: { ...editModal.rowData!, price: Number(e.target.value) }
+                  })}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={editModal.rowData.electric}
+                    onChange={(e) => setEditModal({
+                      ...editModal,
+                      rowData: { ...editModal.rowData!, electric: e.target.checked }
+                    })}
+                  />
+                  Electric
+                </label>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setEditModal({ show: false, rowData: null })}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveEdit}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
